@@ -2,6 +2,7 @@ from __future__ import annotations
 from math import sqrt
 from dataclasses import dataclass, field
 from typing import (
+    Generator,
     Literal,
     Protocol,
     Sequence,
@@ -96,6 +97,11 @@ class Room:
     def __post_init__(self):
         global rooms
         rooms.append(self)
+
+    @property
+    def adjacent(self) -> Generator[Room]:
+        for door in self.doors:
+            yield door.room_dest
 
 
 def add_door(
