@@ -45,10 +45,13 @@ class Rect:
     x: float; y: float; z: float  # fmt: skip
     l: float; w: float; h: float  # fmt: skip
 
-    def dump_planar(self) -> tuple[float, float, float, float]:
+    def dump_xy(self) -> tuple[float, float, float, float]:
         return (self.x, self.y, self.l, self.w)
 
-    def centroid_planar(self) -> tuple[float, float]:
+    def dump_xyz(self) -> tuple[float, float, float, float, float, float]:
+        return (self.x, self.y, self.z, self.l, self.w, self.h)
+
+    def centroid_xy(self) -> tuple[float, float]:
         return (self.x + self.l / 2, self.y + self.w / 2)
 
 
@@ -128,7 +131,7 @@ def save(
     has_content = bool(rooms or doors)
 
     for room in rooms:
-        x, y, w, h = room.rect.dump_planar()
+        x, y, w, h = room.rect.dump_xy()
         min_x, max_x = min(min_x, x), max(max_x, x + w)
         min_y, max_y = min(min_y, y), max(max_y, y + h)
 
@@ -162,7 +165,7 @@ def save(
 
     # 5. Draw rooms
     for room in rooms:
-        x, y, w, h = room.rect.dump_planar()
+        x, y, w, h = room.rect.dump_xy()
         tx, ty = transform((x, y))
         tw, th = w * scale, h * scale
 
@@ -180,7 +183,7 @@ def save(
         )
 
         # Room name (centered)
-        cx, cy = transform(room.rect.centroid_planar())
+        cx, cy = transform(room.rect.centroid_xy())
         drawing.append(
             draw.Text(
                 room.name,
@@ -253,8 +256,8 @@ def format_rooms(mode: Literal["scatter"] | Literal["tight"]):
                 for other in rooms:
                     if other is room:
                         continue
-                    x0, y0 = room.rect.centroid_planar()
-                    x1, y1 = other.rect.centroid_planar()
+                    x0, y0 = room.rect.centroid_xy()
+                    x1, y1 = other.rect.centroid_xy()
                     dsq = (x0 - x1) ** 2 + (y0 - y1) ** 2
                     dinvsq = 1 / (dsq)
                     room.rect.x += dinvsq * FACTOR * (x0 - x1)
@@ -263,13 +266,40 @@ def format_rooms(mode: Literal["scatter"] | Literal["tight"]):
                     other.rect.y -= dinvsq * FACTOR * (y0 - y1)
     if mode == "tight":
         # snapping all the doors
+        # TODO: DO IT
         ...
 
 
 def save_fds(fname: str):
-    f = open(fname, "w")
-    for room in rooms:
-        ...
+    with open(fname, "w") as f:
+        name = "fds"
+        f.write(
+            f"&HEAD CHID='{name}', TITLE='{name}' /\n"
+            "&TIME T_END=60. /\n"
+            "&DUMP NFRAMES=60 /\n"
+            "\n"
+        )
+        for room in rooms:
+            x, y, z, l, w, h = room.rect.dump_xyz()
+            xp, yp, zp = x + l, y + w, z + h
+            SECTOR_SIZE = 1
+            f.write(
+                f"&MESH XB= {x}, {xp}, {y}, {yp}, {z}, {zp}, IJK = {int(l / SECTOR_SIZE)}, {int(w / SECTOR_SIZE)}, {int(h / SECTOR_SIZE)} /\n"
+            )
+        for door in doors:
+            # x, y, z = door.x, door.y, 0
+            # door_size = 1
+            # h = 2.5
+            # # shishan code, making two perpendicular vents
+            # f.write(
+            #     f"&VENT XB= {x - door_size}, {x + door_size}, {y}, {y}, {z}, {z+h}, SURF_ID='OPEN' /\n"
+            # )
+            # f.write(
+            #     f"&VENT XB= {x}, {x}, {y - door_size}, {y + door_size}, {z}, {z+h}, SURF_ID='OPEN' /\n"
+            # )
+            # turns out, FDS automatically does this (it assumes no walls between stuff)
+            ...
+        f.write("\n&TAIL /")
 
 
 # ------------ main ------------
@@ -294,11 +324,13 @@ if __name__ == "__main__":
     add_door(hallway, (10, 20), bathroom, (0, 5), "Hall-Bathroom")  # Right wall
     add_door(hallway, (5, 0), entryway, (5, 10), "Hall-Entry")  # Bottom/top wall
 
-    format_rooms("scatter")
+    # format_rooms("scatter")
 
     # Save the floor plan (scale=20 makes it slightly smaller than default)
     save("sample_floor_plan.png", scale=20)
 
-    import os
+    # import os
+    #
+    # os.system("wslview sample_floor_plan.png")
 
-    os.system("wslview sample_floor_plan.png")
+    save_fds("floor_plan.fds")
