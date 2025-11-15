@@ -49,7 +49,7 @@ class Rect:
         return (self.x, self.y, self.l, self.w)
 
     def centroid_planar(self) -> tuple[float, float]:
-        return (self.x + self.w / 2, self.y + self.h / 2)
+        return (self.x + self.l / 2, self.y + self.w / 2)
 
 
 @dataclass
