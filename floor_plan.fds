@@ -1,0 +1,12 @@
+&HEAD CHID='fds', TITLE='fds' /
+&TIME T_END=60. /
+&DUMP NFRAMES=60 /
+
+&MESH XB= 20, 30, 0, 50, 0, 4, IJK = 10, 50, 4 /
+&MESH XB= 0, 20, 35, 50, 0, 4, IJK = 20, 15, 4 /
+&MESH XB= 0, 20, 15, 30, 0, 4, IJK = 20, 15, 4 /
+&MESH XB= 30, 50, 35, 50, 0, 4, IJK = 20, 15, 4 /
+&MESH XB= 30, 45, 15, 25, 0, 4, IJK = 15, 10, 4 /
+&MESH XB= 20, 30, -10, 0, 0, 4, IJK = 10, 10, 4 /
+
+&TAIL /
