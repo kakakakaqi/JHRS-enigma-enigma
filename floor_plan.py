@@ -42,13 +42,13 @@ def dist(a: Has_pos, b: Has_pos) -> float:
 
 @dataclass
 class Rect:
-    x: float; y: float  # fmt: skip
-    w: float; h: float  # fmt: skip
+    x: float; y: float; z: float  # fmt: skip
+    l: float; w: float; h: float  # fmt: skip
 
-    def dump(self) -> tuple[float, float, float, float]:
-        return (self.x, self.y, self.w, self.h)
+    def dump_planar(self) -> tuple[float, float, float, float]:
+        return (self.x, self.y, self.l, self.w)
 
-    def centroid(self) -> tuple[float, float]:
+    def centroid_planar(self) -> tuple[float, float]:
         return (self.x + self.w / 2, self.y + self.h / 2)
 
 
@@ -128,7 +128,7 @@ def save(
     has_content = bool(rooms or doors)
 
     for room in rooms:
-        x, y, w, h = room.rect.dump()
+        x, y, w, h = room.rect.dump_planar()
         min_x, max_x = min(min_x, x), max(max_x, x + w)
         min_y, max_y = min(min_y, y), max(max_y, y + h)
 
@@ -162,7 +162,7 @@ def save(
 
     # 5. Draw rooms
     for room in rooms:
-        x, y, w, h = room.rect.dump()
+        x, y, w, h = room.rect.dump_planar()
         tx, ty = transform((x, y))
         tw, th = w * scale, h * scale
 
@@ -180,7 +180,7 @@ def save(
         )
 
         # Room name (centered)
-        cx, cy = transform(room.rect.centroid())
+        cx, cy = transform(room.rect.centroid_planar())
         drawing.append(
             draw.Text(
                 room.name,
@@ -253,8 +253,8 @@ def format_rooms(mode: Literal["scatter"] | Literal["tight"]):
                 for other in rooms:
                     if other is room:
                         continue
-                    x0, y0 = room.rect.centroid()
-                    x1, y1 = other.rect.centroid()
+                    x0, y0 = room.rect.centroid_planar()
+                    x1, y1 = other.rect.centroid_planar()
                     dsq = (x0 - x1) ** 2 + (y0 - y1) ** 2
                     dinvsq = 1 / (dsq)
                     room.rect.x += dinvsq * FACTOR * (x0 - x1)
@@ -266,6 +266,12 @@ def format_rooms(mode: Literal["scatter"] | Literal["tight"]):
         ...
 
 
+def save_fds(fname: str):
+    f = open(fname, "w")
+    for room in rooms:
+        ...
+
+
 # ------------ main ------------
 
 
@@ -273,12 +279,12 @@ if __name__ == "__main__":
     """AI GENERATED"""
     # Create a sample floor plan: a simple house with central hallway
 
-    hallway = Room(Rect(20, 0, 10, 50), "Hallway")
-    living_room = Room(Rect(0, 35, 20, 15), "Living Room")
-    bedroom = Room(Rect(0, 15, 20, 15), "Bedroom")
-    kitchen = Room(Rect(30, 35, 20, 15), "Kitchen")
-    bathroom = Room(Rect(30, 15, 15, 10), "Bathroom")
-    entryway = Room(Rect(20, -10, 10, 10), "Entryway")
+    hallway = Room(Rect(20, 0, 0, 10, 50, 4), "Hallway")
+    living_room = Room(Rect(0, 35, 0, 20, 15, 4), "Living Room")
+    bedroom = Room(Rect(0, 15, 0, 20, 15, 4), "Bedroom")
+    kitchen = Room(Rect(30, 35, 0, 20, 15, 4), "Kitchen")
+    bathroom = Room(Rect(30, 15, 0, 15, 10, 4), "Bathroom")
+    entryway = Room(Rect(20, -10, 0, 10, 10, 4), "Entryway")
 
     # Add doors connecting rooms to hallway (on shared walls)
     # Each add_door() creates a bidirectional connection
