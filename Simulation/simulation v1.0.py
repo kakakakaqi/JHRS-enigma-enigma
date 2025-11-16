@@ -390,9 +390,9 @@ while running:
     if keys[pygame.K_s] or keys[pygame.K_DOWN]:
         forward -= 1
     if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-        strafe -= 1
-    if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
         strafe += 1
+    if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+        strafe -= 1
 
     if forward != 0 or strafe != 0:
         # local to world
