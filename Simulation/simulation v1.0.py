@@ -294,6 +294,8 @@ def compute_fov_hits_and_samples(pos, heading):
                 or math.hypot(x - pos[0], y - pos[1]) > VIEW_RANGE
             ):
                 break
+            if occupancy[gy, gx]:
+                break
             samples.append([(x, y)])
             x += dxn / 10
             y += dyn / 10
