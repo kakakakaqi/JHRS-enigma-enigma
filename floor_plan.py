@@ -14,6 +14,7 @@ import drawsvg as draw
 
 rooms: list[Room] = []
 doors: list[Door] = []
+fires: list[Fire] = []
 
 # ------------ utilities ------------
 
@@ -21,7 +22,7 @@ _tot = 0
 _T_co = TypeVar("_T_co", covariant=True)
 
 
-# utiliy function for the automatic incremental naming of room
+# utility function for the automatic incremental naming of room
 def new_id():
     global _tot
     _tot += 1
@@ -89,6 +90,29 @@ class Door:
     def __post_init__(self):
         global doors
         doors.append(self)
+
+
+@dataclass
+class Fire:
+    """AI Generated"""
+
+    """Fire source definition for FDS export"""
+
+    x: float  # Center location
+    y: float
+    z: float
+    width: float = 1.0  # Fire patch dimensions (m)
+    depth: float = 1.0
+    name: str = "FIRE1"
+    fuel: str = "POLYURETHANE"  # FDS fuel ID
+    hrrpua: float = 500.0  # Heat Release Rate Per Unit Area (kW/m²)
+    ramp: list[tuple[float, float]] = field(
+        default_factory=lambda: [(0, 0), (10, 1), (600, 1)]  # (time_s, fraction)
+    )
+
+    def __post_init__(self):
+        global fires
+        fires.append(self)
 
 
 @dataclass
@@ -270,75 +294,275 @@ def format_rooms(mode: Literal["scatter"] | Literal["tight"]):
         ...
 
 
-def save_fds(
-    fname: str,
-    grid_resolution: float = 0.5,
-    temperature: float = 20.0,
-    time_end: float = 60.0,
-    height: float = 4.0,
-):
-    """
-    Minimalist FDS export: single mesh with floor slabs marking rooms.
+def save_fds(fname: str):
+    global rooms, doors
 
-    Creates one computational mesh covering all rooms, with thin floor slabs
-    to visualize room footprints. No walls, ceilings, or doors are generated.
-    Rooms are completely open to each other. This is the simplest possible
-    model for quick visualization and coarse simulations.
-    """
-    global rooms
+    # ===== FIRE-SPECIFIC CONSTANTS =====
+    MESH_RESOLUTION = 1
+    SIMULATION_DURATION = 600.0  # 10 minutes
+    MAX_CELLS = 200000
+    WALL_THICKNESS = 0.15
+    WALL_HEIGHT = 3
 
+    # ===== CALCULATE MESH BOUNDS =====
     if not rooms:
-        print("Warning: No rooms defined, no output generated")
+        print("No rooms to export!")
         return
 
-    # Calculate global bounds
+    all_x = [room.rect.x for room in rooms] + [
+        room.rect.x + room.rect.l for room in rooms
+    ]
+    all_y = [room.rect.y for room in rooms] + [
+        room.rect.y + room.rect.w for room in rooms
+    ]
+
+    x_min, x_max = min(all_x), max(all_x)
+    y_min, y_max = min(all_y), max(all_y)
+    z_min = 0.0
+    z_max = WALL_HEIGHT
+
     padding = 1.0
-    min_x = min(r.rect.x for r in rooms) - padding
-    max_x = max(r.rect.x + r.rect.l for r in rooms) + padding
-    min_y = min(r.rect.y for r in rooms) - padding
-    max_y = max(r.rect.y + r.rect.w for r in rooms) + padding
-    min_z = min(r.rect.z for r in rooms) - padding
-    max_z = max(r.rect.z + r.rect.h for r in rooms) + padding
+    x_min -= padding
+    x_max += padding
+    y_min -= padding
+    y_max += padding
 
-    # Create single mesh for entire domain
-    mesh_i = max(1, int((max_x - min_x) / grid_resolution))
-    mesh_j = max(1, int((max_y - min_y) / grid_resolution))
-    mesh_k = max(1, int((max_z - min_z) / grid_resolution))
+    # ===== CALCULATE MESH CELLS =====
+    dx = x_max - x_min
+    dy = y_max - y_min
+    dz = z_max - z_min
 
-    chid = fname.replace(".fds", "").replace(".", "_").replace(" ", "_")
+    ijk_x = max(1, int(dx / MESH_RESOLUTION))
+    ijk_y = max(1, int(dy / MESH_RESOLUTION))
+    ijk_z = max(1, int(dz / MESH_RESOLUTION))
 
-    with open(fname, "w") as f:
-        # FDS file header
-        f.write(f"&HEAD CHID='{chid}', TITLE='Floor Plan Export' /\n\n")
-        f.write(f"&TIME T_END={time_end} /\n\n")
-        f.write(f"&MISC TMPA={temperature} /\n\n")
-        f.write(
-            f"&ZONE XB={min_x:.3f},{max_x:.3f},{min_y:.3f},{max_y:.3f},{min_z:.3f},{max_z:.3f} /\n\n"
+    total_cells = ijk_x * ijk_y * ijk_z
+    print(f"Mesh cells: {ijk_x} x {ijk_y} x {ijk_z} = {total_cells} total cells")
+
+    if total_cells > MAX_CELLS:
+        MESH_RESOLUTION = 0.3
+        ijk_x = max(1, int(dx / MESH_RESOLUTION))
+        ijk_y = max(1, int(dy / MESH_RESOLUTION))
+        ijk_z = max(1, int(dz / MESH_RESOLUTION))
+
+    # ===== BUILD FDS FILE CONTENT =====
+    fds_content = f"""&HEAD CHID='{fname.replace('.fds', '')}', TITLE='Dynamic Fire Simulation' /
+    
+&MESH IJK={ijk_x},{ijk_y},{ijk_z}, XB={x_min:.3f},{x_max:.3f},{y_min:.3f},{y_max:.3f},{z_min:.3f},{z_max:.3f} /
+
+&TIME T_END={SIMULATION_DURATION} /
+
+&REAC ID='PROPANE_REAC'
+   FUEL='PROPANE'
+   SOOT_YIELD=0.05
+   CO_YIELD=0.01
+/
+
+&MATL ID='CONCRETE'
+   CONDUCTIVITY=1.0
+   SPECIFIC_HEAT=0.88
+   DENSITY=2200.0
+/
+
+&SURF ID='INERT'
+   MATL_ID(1,1)='CONCRETE'
+   THICKNESS(1)=0.15
+   COLOR='GRAY'
+/
+
+&SURF ID='FLOOR'
+   COLOR='TAN'
+/
+
+"""
+
+    # ===== ADD FLOOR =====
+    fds_content += f"&OBST XB={x_min:.3f},{x_max:.3f},{y_min:.3f},{y_max:.3f},{z_min:.3f},{z_min:.3f}, SURF_ID='FLOOR' / Main Floor\n"
+
+    # ===== ADD WALLS FOR EACH ROOM =====
+    for room in rooms:
+        x, y, z, l, w, h = room.rect.dump_xyz()
+        wall_height = WALL_HEIGHT
+
+        fds_content += f"&OBST XB={x:.3f},{x+l:.3f},{y:.3f},{y+WALL_THICKNESS:.3f},{z:.3f},{z+wall_height:.3f}, SURF_ID='INERT' / {room.name} South Wall\n"
+        fds_content += f"&OBST XB={x:.3f},{x+l:.3f},{y+w-WALL_THICKNESS:.3f},{y+w:.3f},{z:.3f},{z+wall_height:.3f}, SURF_ID='INERT' / {room.name} North Wall\n"
+        fds_content += f"&OBST XB={x:.3f},{x+WALL_THICKNESS:.3f},{y:.3f},{y+w:.3f},{z:.3f},{z+wall_height:.3f}, SURF_ID='INERT' / {room.name} West Wall\n"
+        fds_content += f"&OBST XB={x+l-WALL_THICKNESS:.3f},{x+l:.3f},{y:.3f},{y+w:.3f},{z:.3f},{z+wall_height:.3f}, SURF_ID='INERT' / {room.name} East Wall\n"
+
+    # ===== ADD DOOR OPENINGS =====
+    processed_doors = set()
+    door_width = 0.9
+    door_height = 2.0
+
+    for door in doors:
+        door_id = frozenset([door.room_source.name, door.room_dest.name, door.name])
+        if door_id in processed_doors:
+            continue
+        processed_doors.add(door_id)
+
+        source_room = door.room_source
+        sx, sy, sz, sl, sw, sh = source_room.rect.dump_xyz()
+        door_x = door.x
+        door_y = door.y
+
+        dist_south = abs(door_y - sy)
+        dist_north = abs(door_y - (sy + sw))
+        dist_west = abs(door_x - sx)
+        dist_east = abs(door_x - (sx + sl))
+
+        min_dist = min(dist_south, dist_north, dist_west, dist_east)
+
+        if min_dist == dist_south:
+            hole_x1 = door_x - door_width / 2
+            hole_x2 = door_x + door_width / 2
+            hole_y1 = sy
+            hole_y2 = sy + WALL_THICKNESS
+        elif min_dist == dist_north:
+            hole_x1 = door_x - door_width / 2
+            hole_x2 = door_x + door_width / 2
+            hole_y1 = sy + sw - WALL_THICKNESS
+            hole_y2 = sy + sw
+        elif min_dist == dist_west:
+            hole_x1 = sx
+            hole_x2 = sx + WALL_THICKNESS
+            hole_y1 = door_y - door_width / 2
+            hole_y2 = door_y + door_width / 2
+        else:
+            hole_x1 = sx + sl - WALL_THICKNESS
+            hole_x2 = sx + sl
+            hole_y1 = door_y - door_width / 2
+            hole_y2 = door_y + door_width / 2
+
+        fds_content += f"&HOLE XB={hole_x1:.3f},{hole_x2:.3f},{hole_y1:.3f},{hole_y2:.3f},0.0,{door_height:.3f} / Door: {door.name}\n"
+
+        # shishan
+        source_room = door.room_dest
+        sx, sy, sz, sl, sw, sh = source_room.rect.dump_xyz()
+        door_x = door.x
+        door_y = door.y
+
+        dist_south = abs(door_y - sy)
+        dist_north = abs(door_y - (sy + sw))
+        dist_west = abs(door_x - sx)
+        dist_east = abs(door_x - (sx + sl))
+
+        min_dist = min(dist_south, dist_north, dist_west, dist_east)
+
+        if min_dist == dist_south:
+            hole_x1 = door_x - door_width / 2
+            hole_x2 = door_x + door_width / 2
+            hole_y1 = sy
+            hole_y2 = sy + WALL_THICKNESS
+        elif min_dist == dist_north:
+            hole_x1 = door_x - door_width / 2
+            hole_x2 = door_x + door_width / 2
+            hole_y1 = sy + sw - WALL_THICKNESS
+            hole_y2 = sy + sw
+        elif min_dist == dist_west:
+            hole_x1 = sx
+            hole_x2 = sx + WALL_THICKNESS
+            hole_y1 = door_y - door_width / 2
+            hole_y2 = door_y + door_width / 2
+        else:
+            hole_x1 = sx + sl - WALL_THICKNESS
+            hole_x2 = sx + sl
+            hole_y1 = door_y - door_width / 2
+            hole_y2 = door_y + door_width / 2
+
+        fds_content += f"&HOLE XB={hole_x1:.3f},{hole_x2:.3f},{hole_y1:.3f},{hole_y2:.3f},0.0,{door_height:.3f} / Door: {door.name}\n"
+
+    # ===== ADD FIRE SOURCES =====
+    #
+    # We generate:
+    #   - a SURF for each distinct fire (with HRRPUA and optionally RAMP_Q)
+    #   - a VENT acting as the fire surface
+    #   - a RAMP_Q entry if specified
+    #
+
+    def format_ramp(fire_obj):
+        # Converts fire_obj.ramp -> string series of &RAMP lines for that fire
+        out = ""
+        if not getattr(fire_obj, "ramp", None):
+            return out
+        for t, frac in fire_obj.ramp:
+            out += f"&RAMP ID='RAMP_{fire_obj.name}' T={t:.3f} F={frac:.3f} /\n"
+        return out
+
+    if fires:
+        fds_content += "\n\n! ===== FIRE DEFINITIONS =====\n"
+
+    for fire in fires:
+        # Fire SURF with HRRPUA and optional RAMP
+        fds_content += (
+            f"&SURF ID='{fire.name}'\n"
+            f"   HRRPUA={fire.hrrpua:.1f}\n"
+            f"   COLOR='RED'\n"
         )
 
-        # Single mesh covering all rooms
-        f.write(
-            f"&MESH IJK={mesh_i},{mesh_j},{mesh_k}, XB={min_x:.3f},{max_x:.3f},{min_y:.3f},{max_y:.3f},{min_z:.3f},{max_z:.3f} /\n\n"
-        )
+        if getattr(fire, "ramp", None):
+            fds_content += f"   RAMP_Q='RAMP_{fire.name}'\n"
 
-        # Material definitions
-        f.write(
-            "&MATL ID='CONCRETE', CONDUCTIVITY=1.0, DENSITY=2000., SPECIFIC_HEAT=1.0, EMISSIVITY=0.9 /\n"
-        )
-        f.write(
-            "&SURF ID='FLOOR', MATL_ID='CONCRETE', THICKNESS=0.2, RGB=150,100,50 /\n\n"
-        )
+        fds_content += "/\n\n"
 
-        # Room floor slabs only
-        f.write("! Room floor slabs - no walls or ceilings\n")
-        for room in rooms:
-            r = room.rect
-            rid = room.name.replace(" ", "_").replace("-", "_")
-            f.write(
-                f"&MESH XB={r.x:.3f},{r.x+r.l:.3f},{r.y:.3f},{r.y+r.w:.3f},{r.z:.3f},{r.z+height:.3f} /\n"
-            )
+        # RAMP lines (optional)
+        if getattr(fire, "ramp", None):
+            fds_content += format_ramp(fire) + "\n"
 
-        f.write("\n&TAIL /\n")
+        # Fire VENT (used as heat source patch)
+        half_w = fire.width / 2
+        half_d = fire.depth / 2
+
+        xb_x1 = fire.x - half_w
+        xb_x2 = fire.x + half_w
+        xb_y1 = fire.y - half_d
+        xb_y2 = fire.y + half_d
+
+        fds_content += (
+            f"&VENT XB={xb_x1:.3f},{xb_x2:.3f},{xb_y1:.3f},{xb_y2:.3f},"
+            f"{fire.z:.3f},{fire.z:.3f} "
+            f"SURF_ID='{fire.name}' /\n"
+            f"! Fire: {fire.name}\n\n"
+        )
+    # ===== ADD MONITORING =====
+    fds_content += """
+&DUMP DT_DEVC=5.0, DT_SLCF=10.0, NFRAMES=100 /
+"""
+    # Add temperature devices
+    for i, room in enumerate(rooms):
+        cx, cy = room.rect.centroid_xy()
+        fds_content += f"&DEVC XYZ={cx:.3f},{cy:.3f},1.2, QUANTITY='TEMPERATURE', ID='TEMP_{i}' /\n"
+
+    # mid-height for slices
+    mid_z = WALL_HEIGHT / 2.0
+
+    # Add slice files (mid-height PBZ slices for smoke and temperature)
+    fds_content += f"""
+!==================== SLICES (mid-height) ====================
+
+&SLCF PBZ={mid_z:.3f}, QUANTITY='MASS FRACTION', SPEC_ID='SOOT' /
+&SLCF PBZ={mid_z:.3f}, QUANTITY='TEMPERATURE' /
+
+&ISOF QUANTITY='TEMPERATURE', VALUE=50.0 /
+&ISOF QUANTITY='TEMPERATURE', VALUE=100.0 /
+"""
+
+    # Add boundary conditions
+    fds_content += f"""
+&VENT MB='XMIN', SURF_ID='OPEN' /
+&VENT MB='XMAX', SURF_ID='OPEN' /
+&VENT MB='YMIN', SURF_ID='OPEN' /
+&VENT MB='YMAX', SURF_ID='OPEN' /
+! &VENT MB='ZMAX', SURF_ID='OPEN' /  ! NEIN!!, this makes smoke vanish through the 'ceiling'
+
+&TAIL /
+"""
+
+    # ===== WRITE FILE =====
+    try:
+        with open(fname, "w") as f:
+            f.write(fds_content)
+    except Exception as e:
+        print(f"Error writing FDS file: {e}")
 
 
 # ------------ main ------------
@@ -362,6 +586,33 @@ if __name__ == "__main__":
     add_door(hallway, (0, 22.5), bedroom, (20, 7.5), "Hall-Bedroom")  # Left wall
     add_door(hallway, (10, 20), bathroom, (0, 5), "Hall-Bathroom")  # Right wall
     add_door(hallway, (5, 0), entryway, (5, 10), "Hall-Entry")  # Bottom/top wall
+
+    # NEW: Add fire sources
+    # Fire in the kitchen
+    kitchen_fire = Fire(
+        x=40,
+        y=42.5,
+        z=0.0,
+        width=1.5,
+        depth=1.5,
+        name="Kitchen_Fire",
+        fuel="POLYURETHANE",
+        hrrpua=800.0,
+        ramp=[(0, 0), (30, 1), (120, 1)],
+    )
+
+    # Smaller fire in living room
+    living_fire = Fire(
+        x=10,
+        y=42.5,
+        z=0.0,
+        width=1.0,
+        depth=1.0,
+        name="Living_Fire",
+        fuel="WOOD",
+        hrrpua=400.0,
+        ramp=[(10, 0), (60, 1), (300, 1)],
+    )
 
     # format_rooms("scatter")
 
