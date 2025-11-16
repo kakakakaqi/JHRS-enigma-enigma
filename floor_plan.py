@@ -270,36 +270,75 @@ def format_rooms(mode: Literal["scatter"] | Literal["tight"]):
         ...
 
 
-def save_fds(fname: str):
+def save_fds(
+    fname: str,
+    grid_resolution: float = 0.5,
+    temperature: float = 20.0,
+    time_end: float = 60.0,
+    height: float = 4.0,
+):
+    """
+    Minimalist FDS export: single mesh with floor slabs marking rooms.
+
+    Creates one computational mesh covering all rooms, with thin floor slabs
+    to visualize room footprints. No walls, ceilings, or doors are generated.
+    Rooms are completely open to each other. This is the simplest possible
+    model for quick visualization and coarse simulations.
+    """
+    global rooms
+
+    if not rooms:
+        print("Warning: No rooms defined, no output generated")
+        return
+
+    # Calculate global bounds
+    padding = 1.0
+    min_x = min(r.rect.x for r in rooms) - padding
+    max_x = max(r.rect.x + r.rect.l for r in rooms) + padding
+    min_y = min(r.rect.y for r in rooms) - padding
+    max_y = max(r.rect.y + r.rect.w for r in rooms) + padding
+    min_z = min(r.rect.z for r in rooms) - padding
+    max_z = max(r.rect.z + r.rect.h for r in rooms) + padding
+
+    # Create single mesh for entire domain
+    mesh_i = max(1, int((max_x - min_x) / grid_resolution))
+    mesh_j = max(1, int((max_y - min_y) / grid_resolution))
+    mesh_k = max(1, int((max_z - min_z) / grid_resolution))
+
+    chid = fname.replace(".fds", "").replace(".", "_").replace(" ", "_")
+
     with open(fname, "w") as f:
-        name = "fds"
+        # FDS file header
+        f.write(f"&HEAD CHID='{chid}', TITLE='Floor Plan Export' /\n\n")
+        f.write(f"&TIME T_END={time_end} /\n\n")
+        f.write(f"&MISC TMPA={temperature} /\n\n")
         f.write(
-            f"&HEAD CHID='{name}', TITLE='{name}' /\n"
-            "&TIME T_END=60. /\n"
-            "&DUMP NFRAMES=60 /\n"
-            "\n"
+            f"&ZONE XB={min_x:.3f},{max_x:.3f},{min_y:.3f},{max_y:.3f},{min_z:.3f},{max_z:.3f} /\n\n"
         )
+
+        # Single mesh covering all rooms
+        f.write(
+            f"&MESH IJK={mesh_i},{mesh_j},{mesh_k}, XB={min_x:.3f},{max_x:.3f},{min_y:.3f},{max_y:.3f},{min_z:.3f},{max_z:.3f} /\n\n"
+        )
+
+        # Material definitions
+        f.write(
+            "&MATL ID='CONCRETE', CONDUCTIVITY=1.0, DENSITY=2000., SPECIFIC_HEAT=1.0, EMISSIVITY=0.9 /\n"
+        )
+        f.write(
+            "&SURF ID='FLOOR', MATL_ID='CONCRETE', THICKNESS=0.2, RGB=150,100,50 /\n\n"
+        )
+
+        # Room floor slabs only
+        f.write("! Room floor slabs - no walls or ceilings\n")
         for room in rooms:
-            x, y, z, l, w, h = room.rect.dump_xyz()
-            xp, yp, zp = x + l, y + w, z + h
-            SECTOR_SIZE = 1
+            r = room.rect
+            rid = room.name.replace(" ", "_").replace("-", "_")
             f.write(
-                f"&MESH XB= {x}, {xp}, {y}, {yp}, {z}, {zp}, IJK = {int(l / SECTOR_SIZE)}, {int(w / SECTOR_SIZE)}, {int(h / SECTOR_SIZE)} /\n"
+                f"&MESH XB={r.x:.3f},{r.x+r.l:.3f},{r.y:.3f},{r.y+r.w:.3f},{r.z:.3f},{r.z+height:.3f} /\n"
             )
-        for door in doors:
-            # x, y, z = door.x, door.y, 0
-            # door_size = 1
-            # h = 2.5
-            # # shishan code, making two perpendicular vents
-            # f.write(
-            #     f"&VENT XB= {x - door_size}, {x + door_size}, {y}, {y}, {z}, {z+h}, SURF_ID='OPEN' /\n"
-            # )
-            # f.write(
-            #     f"&VENT XB= {x}, {x}, {y - door_size}, {y + door_size}, {z}, {z+h}, SURF_ID='OPEN' /\n"
-            # )
-            # turns out, FDS automatically does this (it assumes no walls between stuff)
-            ...
-        f.write("\n&TAIL /")
+
+        f.write("\n&TAIL /\n")
 
 
 # ------------ main ------------
