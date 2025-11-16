@@ -33,8 +33,8 @@ STAMINA_INIT = 1.0
 MIN_STAMINA = 0.12
 STAMINA_LOSS_PER_M = 0.025
 
-AVATAR_RADIUS = 0.18  # meters
-WALL_THICKEN_PXD = 1  # how many dilation iterations for wall thickness (integer)
+AVATAR_RADIUS = 0.21  # meters, half of average length across the shoulder
+WALL_THICKEN_PXD = 0  # how many dilation iterations for wall thickness (integer)
 
 EPS = 1e-9
 INTERSECTION_EPS = 1e-8
@@ -235,7 +235,7 @@ font = pygame.font.SysFont(None, 20)
 
 # ---------------- Simulation state ----------------
 # pick a start cell inside interior (find one)
-start = None
+'''start = None
 for gy in range(GRID_H):
     for gx in range(GRID_W):
         if interior[gy, gx]:
@@ -243,8 +243,8 @@ for gy in range(GRID_H):
             break
     if start:
         break
-if not start:
-    start = (int(GRID_W * 0.2), int(GRID_H * 0.5))
+if not start:'''
+start = (int(GRID_W * 0.2), int(GRID_H * 0.8))
 
 avatar_x, avatar_y = grid_to_world(*start)
 avatar_heading = 0.0
@@ -482,7 +482,7 @@ while running:
     pos = font.render(f"Pos: {avatar_x:.2f}, {avatar_y:.2f}", True, (220, 220, 220))
     screen.blit(st, (8, 8))
     screen.blit(pos, (8, 28))
-
+    print(avatar_x,avatar_y)
     pygame.display.flip()
 
 pygame.quit()
