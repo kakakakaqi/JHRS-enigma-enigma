@@ -10,6 +10,7 @@ from typing import (
 )
 import drawsvg as draw
 import analysis_bridge
+from Simulation.watchman import compute_watchman_route
 
 # ------------ globals ------------
 
@@ -122,6 +123,8 @@ class Room:
     name: str = field(default_factory=new_id)
     doors: list[Door] = field(default_factory=list)
     slices: dict[str, list[analysis_bridge.np.ndarray]] = field(default_factory=dict)
+    slice_dt: float = float("NaN")
+    clear_dist = float("NaN")
 
     def __post_init__(self):
         global rooms
@@ -131,6 +134,11 @@ class Room:
     def adjacent(self) -> Generator[Room]:
         for door in self.doors:
             yield door.room_dest
+
+    def calc_dist(self, fov: float):
+        self.clear_dist = compute_watchman_route(
+            self, fov_angle=fov, vis_radius="rachael"
+        )
 
 
 def add_door(
@@ -581,8 +589,11 @@ def analyze_stuff(sim: analysis_bridge.fdsreader.Simulation):
                 i += 1
             except:
                 break
+        times = sim.slices[0][0].times
+        dt = (times[-1] - times[0]) / times.size
         room.slices["soot"] = soot
         room.slices["temperature"] = temperature
+        room.slice_dt = dt
 
 
 # ------------ main ------------

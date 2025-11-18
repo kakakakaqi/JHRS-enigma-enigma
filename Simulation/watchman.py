@@ -1,13 +1,8 @@
-from floor_plan import Room
-
-
-def compute_watchman_route(room: Room) -> list[tuple[float, float]]:
-    """
-    Compute the watchman route inside a single rectangular Room (no obstacles).
-    Returns:
-        list[(x,y)] — the ordered route points.
-    """
-
+def compute_watchman_route(
+    room,
+    fov_angle: float,
+    vis_radius: float,
+) -> list[tuple[float, float]]:
     # ------------------------------------------
     # Extract geometry from Room
     # ------------------------------------------
@@ -23,8 +18,8 @@ def compute_watchman_route(room: Room) -> list[tuple[float, float]]:
     # ------------------------------------------
     # Parameters — kept identical to your script
     # ------------------------------------------
-    FOV_ANGLE_DEG = 90.0
-    VIS_RADIUS = 5
+    FOV_ANGLE_DEG = fov_angle
+    VIS_RADIUS = vis_radius
     ANGULAR_SAMPLES = 72
     NUM_RANDOM_CANDIDATES = 200
     TSP_RANDOM_RESTARTS = 5
