@@ -19,6 +19,7 @@ import numpy as np
 rooms: list[Room] = []
 doors: list[Door] = []
 fires: list[Fire] = []
+total_people = 0
 
 # ------------ utilities ------------
 
@@ -130,6 +131,7 @@ class Discomforts(TypedDict):
 class Room:
     rect: Rect
     name: str = field(default_factory=new_id)
+    people: int = 0
     doors: list[Door] = field(default_factory=list)
     slices: dict[str, list[analysis_bridge.np.ndarray]] = field(default_factory=dict)
     mean_slice: dict[str, float] = field(default_factory=dict)
@@ -139,8 +141,9 @@ class Room:
     vr = float("NaN")
 
     def __post_init__(self):
-        global rooms
+        global rooms, total_people
         rooms.append(self)
+        total_people += self.people
 
     @property
     def adjacent(self) -> Generator[Room]:
@@ -154,19 +157,22 @@ class Room:
         eps = 1e-6
         s = self.mean_slice["soot"]
         t = self.mean_slice["temperature"]
-        print(self.name)
-        print(t)
         vr = (
             (622 / (self.mean_slice["soot"] * 1000 * 10**6 + eps)) ** (50 / 49)
         ) * 1000
+        self.vr = vr
         # visual discomfort
         self.discomforts["visual"] = max(0, min(1, (10 - self.vr) / 10))
         # thermal discomfort
-        self.discomforts["thermal"] = 1 / (1 + 2.7183 ** (-k * (t - 22.778)))
+        self.discomforts["thermal"] = max(
+            0,
+            (1 + 2.7183 ** (-0.778 * k)) / (1 + 2.7183 ** (-k * (t - 22.778)))
+            - 2.7183 ** (-0.778 * k),
+        )
         # respiratory discomfort
-        DTHRESHOLD = 0.000001  # kg/m^3
+        DTHRESHOLD = 4 * 10**-9  # kg/m^3
         self.discomforts["respiratory"] = max(
-            0, min(1, (DTHRESHOLD - s) / (DTHRESHOLD))
+            0, min(1, (s - DTHRESHOLD) / (DTHRESHOLD))
         )
         # combined
         self.discomforts["combined"] = 1 - (1 - self.discomforts["visual"]) * (
@@ -175,7 +181,7 @@ class Room:
 
     def calc_dist(self, fov: float):
         self.clear_dist = compute_watchman_route(
-            self, fov_angle=fov, vis_radius="rachael"
+            self, fov_angle=fov, vis_radius=self.vr
         )
 
 
