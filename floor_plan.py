@@ -12,7 +12,9 @@ from typing import (
 import drawsvg as draw
 import analysis_bridge
 from Simulation.watchman import compute_watchman_route
+import macro_route
 import numpy as np
+from tqdm import tqdm
 
 # ------------ globals ------------
 
@@ -139,12 +141,15 @@ class Room:
     discomforts: Discomforts = field(default_factory=dict)  # type: ignore
     slice_dt: float = float("NaN")
     clear_dist = float("NaN")
+    clear_time: float = float("Nan")
     vr = float("NaN")
     p: float = float("NaN")
+    idx: int = -1000000000000
 
     def __post_init__(self):
         global rooms, total_people
         rooms.append(self)
+        self.idx = len(rooms) - 1
         total_people += self.people
 
     @property
@@ -512,76 +517,78 @@ def save_fds(fname: str, duration: float):
             continue
         processed_doors.add(door_id)
 
-        source_room = door.room_source
-        sx, sy, sz, sl, sw, sh = source_room.rect.dump_xyz()
-        door_x = door.x
-        door_y = door.y
-
-        dist_south = abs(door_y - sy)
-        dist_north = abs(door_y - (sy + sw))
-        dist_west = abs(door_x - sx)
-        dist_east = abs(door_x - (sx + sl))
-
-        min_dist = min(dist_south, dist_north, dist_west, dist_east)
-
-        if min_dist == dist_south:
-            hole_x1 = door_x - door_width / 2
-            hole_x2 = door_x + door_width / 2
-            hole_y1 = sy
-            hole_y2 = sy + WALL_THICKNESS
-        elif min_dist == dist_north:
-            hole_x1 = door_x - door_width / 2
-            hole_x2 = door_x + door_width / 2
-            hole_y1 = sy + sw - WALL_THICKNESS
-            hole_y2 = sy + sw
-        elif min_dist == dist_west:
-            hole_x1 = sx
-            hole_x2 = sx + WALL_THICKNESS
-            hole_y1 = door_y - door_width / 2
-            hole_y2 = door_y + door_width / 2
-        else:
-            hole_x1 = sx + sl - WALL_THICKNESS
-            hole_x2 = sx + sl
-            hole_y1 = door_y - door_width / 2
-            hole_y2 = door_y + door_width / 2
-
-        fds_content += f"&HOLE XB={hole_x1:.3f},{hole_x2:.3f},{hole_y1:.3f},{hole_y2:.3f},0.0,{door_height:.3f} / Door: {door.name}\n"
+        # source_room = door.room_source
+        # sx, sy, sz, sl, sw, sh = source_room.rect.dump_xyz()
+        # door_x = door.x
+        # door_y = door.y
+        #
+        # dist_south = abs(door_y - sy)
+        # dist_north = abs(door_y - (sy + sw))
+        # dist_west = abs(door_x - sx)
+        # dist_east = abs(door_x - (sx + sl))
+        #
+        # min_dist = min(dist_south, dist_north, dist_west, dist_east)
+        #
+        # if min_dist == dist_south:
+        #     hole_x1 = door_x - door_width / 2
+        #     hole_x2 = door_x + door_width / 2
+        #     hole_y1 = sy
+        #     hole_y2 = sy + WALL_THICKNESS
+        # elif min_dist == dist_north:
+        #     hole_x1 = door_x - door_width / 2
+        #     hole_x2 = door_x + door_width / 2
+        #     hole_y1 = sy + sw - WALL_THICKNESS
+        #     hole_y2 = sy + sw
+        # elif min_dist == dist_west:
+        #     hole_x1 = sx
+        #     hole_x2 = sx + WALL_THICKNESS
+        #     hole_y1 = door_y - door_width / 2
+        #     hole_y2 = door_y + door_width / 2
+        # else:
+        #     hole_x1 = sx + sl - WALL_THICKNESS
+        #     hole_x2 = sx + sl
+        #     hole_y1 = door_y - door_width / 2
+        #     hole_y2 = door_y + door_width / 2
+        #
+        # fds_content += f"&HOLE XB={hole_x1:.3f},{hole_x2:.3f},{hole_y1:.3f},{hole_y2:.3f},0.0,{door_height:.3f} / Door: {door.name}\n"
 
         # shishan
         source_room = door.room_dest
         sx, sy, sz, sl, sw, sh = source_room.rect.dump_xyz()
-        door_x = door.x
-        door_y = door.y
+        # door_x = door.x
+        # door_y = door.y
 
-        dist_south = abs(door_y - sy)
-        dist_north = abs(door_y - (sy + sw))
-        dist_west = abs(door_x - sx)
-        dist_east = abs(door_x - (sx + sl))
+        fds_content += f"&HOLE XB={door.x-door_width:.3f},{door.x+door_width:.3f},{door.y-door_width:.3f},{door.y+door_width:.3f},0.0,{door_height:.3f} / Door: {door.name}\n"
 
-        min_dist = min(dist_south, dist_north, dist_west, dist_east)
-
-        if min_dist == dist_south:
-            hole_x1 = door_x - door_width / 2
-            hole_x2 = door_x + door_width / 2
-            hole_y1 = sy
-            hole_y2 = sy + WALL_THICKNESS
-        elif min_dist == dist_north:
-            hole_x1 = door_x - door_width / 2
-            hole_x2 = door_x + door_width / 2
-            hole_y1 = sy + sw - WALL_THICKNESS
-            hole_y2 = sy + sw
-        elif min_dist == dist_west:
-            hole_x1 = sx
-            hole_x2 = sx + WALL_THICKNESS
-            hole_y1 = door_y - door_width / 2
-            hole_y2 = door_y + door_width / 2
-        else:
-            hole_x1 = sx + sl - WALL_THICKNESS
-            hole_x2 = sx + sl
-            hole_y1 = door_y - door_width / 2
-            hole_y2 = door_y + door_width / 2
-
-        fds_content += f"&HOLE XB={hole_x1:.3f},{hole_x2:.3f},{hole_y1:.3f},{hole_y2:.3f},0.0,{door_height:.3f} / Door: {door.name}\n"
+        # dist_south = abs(door_y - sy)
+        # dist_north = abs(door_y - (sy + sw))
+        # dist_west = abs(door_x - sx)
+        # dist_east = abs(door_x - (sx + sl))
+        #
+        # min_dist = min(dist_south, dist_north, dist_west, dist_east)
+        #
+        # if min_dist == dist_south:
+        #     hole_x1 = door_x - door_width / 2
+        #     hole_x2 = door_x + door_width / 2
+        #     hole_y1 = sy
+        #     hole_y2 = sy + WALL_THICKNESS
+        # elif min_dist == dist_north:
+        #     hole_x1 = door_x - door_width / 2
+        #     hole_x2 = door_x + door_width / 2
+        #     hole_y1 = sy + sw - WALL_THICKNESS
+        #     hole_y2 = sy + sw
+        # elif min_dist == dist_west:
+        #     hole_x1 = sx
+        #     hole_x2 = sx + WALL_THICKNESS
+        #     hole_y1 = door_y - door_width / 2
+        #     hole_y2 = door_y + door_width / 2
+        # else:
+        #     hole_x1 = sx + sl - WALL_THICKNESS
+        #     hole_x2 = sx + sl
+        #     hole_y1 = door_y - door_width / 2
+        #     hole_y2 = door_y + door_width / 2
+        #
+        # fds_content += f"&HOLE XB={hole_x1:.3f},{hole_x2:.3f},{hole_y1:.3f},{hole_y2:.3f},0.0,{door_height:.3f} / Door: {door.name}\n"
 
     # ===== ADD FIRE SOURCES =====
     #
@@ -677,7 +684,7 @@ def save_fds(fname: str, duration: float):
         print(f"Error writing FDS file: {e}")
 
 
-def analyze_stuff(sim: analysis_bridge.fdsreader.Simulation):
+def analyze_stuff(sim: analysis_bridge.fdsreader.Simulation, k: float, root_name: str):
     global rooms
     for room in rooms:
         i = 0
@@ -707,6 +714,47 @@ def analyze_stuff(sim: analysis_bridge.fdsreader.Simulation):
                 np.mean(room.slices["temperature"][i]) * a * b**i
             )
 
+    for room in rooms:
+        room.analyze_what_was_analyzed(k)
+        room.calc_p_value(root_name)
+
+
+def i_hate_watchman(shortcut=False):
+    for room in tqdm(rooms, desc="Watchman"):
+        if shortcut:
+            path = []
+        else:
+            path = compute_watchman_route(room, 150, room.vr)
+        tot = 0
+        for i in range(len(path) - 1):
+            x1, y1 = path[i]
+            x2, y2 = path[i + 1]
+            tot += ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
+        t = tot / 2.6
+        room.clear_dist = tot
+        room.clear_time = t
+
+        if room.vr >= 5:
+            # high visibility
+            room.clear_time /= 2
+
+
+def dp(root_index: int):
+    global rooms
+    x = macro_route.import_rooms(rooms, root_index)
+    ignores = macro_route.find_removable_paths(x)
+    roots = macro_route.construct_true_tree(rooms, root_index, ignores)
+    roots = list(map(macro_route.convert, roots))
+
+    sM = float("-inf")
+    tM, rM = None, None
+    for i in range(len(roots)):
+        t, s, r = macro_route.dp(roots[i], 300)
+        if s > sM:
+            sM, tM, rM = s, t, r
+    assert rM is not None
+    return tM, sM, macro_route.clean_route(rM)
+
 
 # ------------ main ------------
 
@@ -720,7 +768,7 @@ if __name__ == "__main__":
     bedroom = Room(Rect(0, 15, 0, 20, 15, 4), "Bedroom")
     kitchen = Room(Rect(30, 35, 0, 20, 15, 4), "Kitchen")
     bathroom = Room(Rect(30, 15, 0, 15, 10, 4), "Bathroom")
-    entryway = Room(Rect(20, -10, 0, 10, 10, 4), "Entryway")
+    elevator = Room(Rect(20, -10, 0, 10, 10, 4), "Entryway")
 
     # Add doors connecting rooms to hallway (on shared walls)
     # Each add_door() creates a bidirectional connection
@@ -728,7 +776,7 @@ if __name__ == "__main__":
     add_door(hallway, (10, 42.5), kitchen, (0, 7.5), "Hall-Kitchen")  # Right wall
     add_door(hallway, (0, 22.5), bedroom, (20, 7.5), "Hall-Bedroom")  # Left wall
     add_door(hallway, (10, 20), bathroom, (0, 5), "Hall-Bathroom")  # Right wall
-    add_door(hallway, (5, 0), entryway, (5, 10), "Hall-Entry")  # Bottom/top wall
+    add_door(hallway, (5, 0), elevator, (5, 10), "Hall-Entry")  # Bottom/top wall
 
     # NEW: Add fire sources
     # Fire in the kitchen

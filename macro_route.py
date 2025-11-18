@@ -205,8 +205,8 @@ def construct_true_tree(rooms, root_idx, ignore_pairs):
             r.p,
             None,
             [],
-            t=(0, 0),  # NOTE: code to be written
-            tc=0,
+            t=(0, 0),  # will do in convert
+            tc=r.clear_time,
             room=r,
         )
         for r in rooms
@@ -268,8 +268,8 @@ def _make_dummy(parent: Node_binary | None) -> Node_binary:
         p=1.0,
         father=parent,
         children=(None, None),
-        t=(1.0, 1.0),
-        tc=1.0,
+        t=(0.0, 0.0),
+        tc=0.0,
         name=f"dummy_{dummy_counter}",
     )
 
@@ -281,7 +281,10 @@ def convert(node: Node, parent_bin: Node_binary | None = None) -> Node_binary:
         p=node.p,
         father=parent_bin,
         children=(None, None),
-        t=node.t,
+        t=(
+            (node.room.rect.l + node.room.rect.w) / 2,
+            (node.room.rect.l + node.room.rect.w) / 2,
+        ),
         tc=node.tc,
         name=node.room.name if hasattr(node.room, "name") else str(node.room),
     )
@@ -329,41 +332,55 @@ def convert(node: Node, parent_bin: Node_binary | None = None) -> Node_binary:
     return node_bin
 
 
-def dp(
-    node: Node_binary, t0: float, route: list[Node_binary] = []
-) -> tuple[float, float]:
+def dp(node: Node_binary, t0: float) -> Tuple[float, float, List[Node_binary]]:
     """
-    (time in sub-tree, score obtained)
+    Returns (time_in_subtree, score_obtained, optimal_route)
     """
-    # leaf node
+    # Leaf node: base case
     if node.children[0] is None:
-        return (node.tc, node.p / t0)
-    # two children
-    elif node.children[0] is not None and node.children[1] is not None:
+        return (node.tc, node.p / t0, [node])
+
+    # Two children: try both traversal orders
+    if node.children[0] is not None and node.children[1] is not None:
         score0 = node.p / t0
-        # config 1
-        dt11, score11 = dp(node.children[0], t0 + node.t[0])
-        dt12, score12 = dp(node.children[1], t0 + node.t[0] * 2 + node.t[1] + dt11)
-        # config 2
-        dt21, score21 = dp(node.children[1], t0 + node.t[1])
-        dt22, score22 = dp(node.children[0], t0 + node.t[1] * 2 + node.t[0] + dt21)
-        if (score11 + score12) > (score21 + score22):
-            score1, score2 = score11, score12
-            dt1, dt2 = dt11, dt12
+
+        # Config 1: left child first
+        dt11, score11, route11 = dp(node.children[0], t0 + node.t[0])
+        dt12, score12, route12 = dp(
+            node.children[1], t0 + node.t[0] * 2 + node.t[1] + dt11
+        )
+        total_score1 = score11 + score12 + score0
+        total_time1 = node.t[0] * 2 + node.t[1] * 2 + dt11 + dt12 + node.tc
+        route1 = [node] + route11 + route12
+
+        # Config 2: right child first
+        dt21, score21, route21 = dp(node.children[1], t0 + node.t[1])
+        dt22, score22, route22 = dp(
+            node.children[0], t0 + node.t[1] * 2 + node.t[0] + dt21
+        )
+        total_score2 = score21 + score22 + score0
+        total_time2 = node.t[0] * 2 + node.t[1] * 2 + dt21 + dt22 + node.tc
+        route2 = [node] + route21 + route22
+
+        # Return the better configuration
+        if total_score1 > total_score2:
+            return (total_time1, total_score1, route1)
         else:
-            score1, score2 = score21, score22
-            dt1, dt2 = dt21, dt22
-        return u(
-            node.t[0] * 2 + node.t[1] * 2 + dt1 + dt2 + node.tc,
-            score1 + score2 + score0,
-        )
-    # one child
-    elif node.children[0] is not None and node.children[1] is None:
+            return (total_time2, total_score2, route2)
+
+    # One child: only left child exists
+    if node.children[0] is not None and node.children[1] is None:
         score0 = node.p / t0
-        dt1, score1 = dp(node.children[0], t0 + node.t[0])
-        return (
-            node.t[0] * 2 + dt1 + node.tc,
-            score1 + score0,
-        )
-    else:
-        raise RuntimeError("Bad format")
+        dt1, score1, route1 = dp(node.children[0], t0 + node.t[0])
+        total_time = node.t[0] * 2 + dt1 + node.tc
+        route = [node] + route1
+        return (total_time, score1 + score0, route)
+
+    raise RuntimeError("Bad node format: both children cannot be None at non-leaf")
+
+
+def clean_route(route: list[Node_binary]):
+    for node in route:
+        if node.name.startswith("dummy"):
+            continue
+        yield node
