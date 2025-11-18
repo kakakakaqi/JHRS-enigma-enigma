@@ -19,6 +19,8 @@ add_door(hallway, (0, 22.5), bedroom, (20, 7.5), "Hall-Bedroom")  # Left wall
 add_door(hallway, (10, 20), bathroom, (0, 5), "Hall-Bathroom")  # Right wall
 add_door(hallway, (5, 0), entryway, (5, 10), "Hall-Entry")  # Bottom/top wall
 
+compute_dijkstra()
+
 # format_rooms("scatter")
 
 # Save the floor plan (scale=20 makes it slightly smaller than default)
@@ -30,6 +32,8 @@ analyze_stuff(fdsreader.Simulation("./V3"))
 
 for room in rooms:
     room.analyze_what_was_analyzed(0.3)
+    room.calc_p_value("Entryway")
     print(f"name: {room.name}")
     print(room.discomforts)
+    print(room.p)
     print()

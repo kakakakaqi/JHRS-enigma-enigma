@@ -13,6 +13,7 @@ import drawsvg as draw
 import analysis_bridge
 from Simulation.watchman import compute_watchman_route
 import numpy as np
+import heapq
 
 # ------------ globals ------------
 
@@ -20,6 +21,7 @@ rooms: list[Room] = []
 doors: list[Door] = []
 fires: list[Fire] = []
 total_people = 0
+dijsktra: dict[tuple[str, str], int] = {}
 
 # ------------ utilities ------------
 
@@ -139,6 +141,7 @@ class Room:
     slice_dt: float = float("NaN")
     clear_dist = float("NaN")
     vr = float("NaN")
+    p: float = float("NaN")
 
     def __post_init__(self):
         global rooms, total_people
@@ -179,6 +182,21 @@ class Room:
             1 - self.discomforts["thermal"]
         ) * (1 - self.discomforts["respiratory"])
 
+    def calc_p_value(self, exit_node_name: str):
+        global total_people, rooms
+        # calc p value
+        if exit_node_name == self.name:
+            return
+        self.p = (1 - self.discomforts["combined"]) / (
+            dijsktra[exit_node_name, self.name]
+        )
+        for room in rooms:
+            if room is self:
+                continue
+            self.p *= (1 + room.people / max(1, total_people)) / (
+                dijsktra[self.name, room.name] ** 2
+            )
+
     def calc_dist(self, fov: float):
         self.clear_dist = compute_watchman_route(
             self, fov_angle=fov, vis_radius=self.vr
@@ -192,6 +210,46 @@ def add_door(
     d2 = Door(room2, room1, p2[0], p2[1], p1[0], p1[1], name)
     room1.doors.append(d1)
     room2.doors.append(d2)
+
+
+def compute_dijkstra():
+    """
+    Computes all-pairs shortest paths between rooms.
+    Distance = number of doors between rooms.
+    """
+    global dijsktra
+
+    for start_room in rooms:
+        # distance from start_room to each other room
+        unvisited = {room.name: float("inf") for room in rooms}
+        unvisited[start_room.name] = 0
+        visited = {}
+
+        while unvisited:
+            # pick the unvisited room with the smallest distance
+            current_name = min(unvisited, key=unvisited.get)
+            current_dist = unvisited[current_name]
+            current_room = next(r for r in rooms if r.name == current_name)
+
+            # mark as visited
+            visited[current_name] = current_dist
+            unvisited.pop(current_name)
+
+            # iterate over neighbors
+            for door in current_room.doors:
+                neighbor = door.room_dest
+                if neighbor.name in visited:
+                    continue
+
+                # each door adds 1 to the distance
+                new_dist = current_dist + 1
+
+                if new_dist < unvisited.get(neighbor.name, float("inf")):
+                    unvisited[neighbor.name] = new_dist
+
+        # store results
+        for end_name, distance in visited.items():
+            dijsktra[(start_room.name, end_name)] = distance
 
 
 def save(
