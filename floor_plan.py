@@ -13,7 +13,6 @@ import drawsvg as draw
 import analysis_bridge
 from Simulation.watchman import compute_watchman_route
 import numpy as np
-import heapq
 
 # ------------ globals ------------
 
@@ -186,6 +185,7 @@ class Room:
         global total_people, rooms
         # calc p value
         if exit_node_name == self.name:
+            self.p = 0
             return
         self.p = (1 - self.discomforts["combined"]) / (
             dijsktra[exit_node_name, self.name]
@@ -766,4 +766,4 @@ if __name__ == "__main__":
     #
     # os.system("wslview sample_floor_plan.png")
 
-    save_fds("floor_plan.fds")
+    save_fds("floor_plan.fds", 600)
