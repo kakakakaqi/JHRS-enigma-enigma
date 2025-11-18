@@ -7,10 +7,12 @@ from typing import (
     Protocol,
     Sequence,
     TypeVar,
+    TypedDict,
 )
 import drawsvg as draw
 import analysis_bridge
 from Simulation.watchman import compute_watchman_route
+import numpy as np
 
 # ------------ globals ------------
 
@@ -117,14 +119,24 @@ class Fire:
         fires.append(self)
 
 
+class Discomforts(TypedDict):
+    visual: float
+    thermal: float
+    respiratory: float
+    combined: float
+
+
 @dataclass
 class Room:
     rect: Rect
     name: str = field(default_factory=new_id)
     doors: list[Door] = field(default_factory=list)
     slices: dict[str, list[analysis_bridge.np.ndarray]] = field(default_factory=dict)
+    mean_slice: dict[str, float] = field(default_factory=dict)
+    discomforts: Discomforts = field(default_factory=dict)  # type: ignore
     slice_dt: float = float("NaN")
     clear_dist = float("NaN")
+    vr = float("NaN")
 
     def __post_init__(self):
         global rooms
@@ -134,6 +146,32 @@ class Room:
     def adjacent(self) -> Generator[Room]:
         for door in self.doors:
             yield door.room_dest
+
+    def analyze_what_was_analyzed(self, k: float):
+        """
+        k is thermal sensitivity
+        """
+        eps = 1e-6
+        s = self.mean_slice["soot"]
+        t = self.mean_slice["temperature"]
+        print(self.name)
+        print(t)
+        vr = (
+            (622 / (self.mean_slice["soot"] * 1000 * 10**6 + eps)) ** (50 / 49)
+        ) * 1000
+        # visual discomfort
+        self.discomforts["visual"] = max(0, min(1, (10 - self.vr) / 10))
+        # thermal discomfort
+        self.discomforts["thermal"] = 1 / (1 + 2.7183 ** (-k * (t - 22.778)))
+        # respiratory discomfort
+        DTHRESHOLD = 0.000001  # kg/m^3
+        self.discomforts["respiratory"] = max(
+            0, min(1, (DTHRESHOLD - s) / (DTHRESHOLD))
+        )
+        # combined
+        self.discomforts["combined"] = 1 - (1 - self.discomforts["visual"]) * (
+            1 - self.discomforts["thermal"]
+        ) * (1 - self.discomforts["respiratory"])
 
     def calc_dist(self, fov: float):
         self.clear_dist = compute_watchman_route(
@@ -304,12 +342,12 @@ def format_rooms(mode: Literal["scatter"] | Literal["tight"]):
         ...
 
 
-def save_fds(fname: str):
+def save_fds(fname: str, duration: float):
     global rooms, doors
 
     # ===== FIRE-SPECIFIC CONSTANTS =====
     MESH_RESOLUTION = 1
-    SIMULATION_DURATION = 600.0  # 10 minutes
+    SIMULATION_DURATION = duration  # 10 minutes
     MAX_CELLS = 200000
     WALL_THICKNESS = 0.15
     WALL_HEIGHT = 3
@@ -590,10 +628,20 @@ def analyze_stuff(sim: analysis_bridge.fdsreader.Simulation):
             except:
                 break
         times = sim.slices[0][0].times
-        dt = (times[-1] - times[0]) / times.size
+        dt = (times[-1] - times[0]) / (times.size - 1)
         room.slices["soot"] = soot
         room.slices["temperature"] = temperature
         room.slice_dt = dt
+
+        a, b = 0.0661, 0.937
+        room.mean_slice["soot"] = 0
+        for i in range(len(room.slices["soot"])):
+            room.mean_slice["soot"] += np.mean(room.slices["soot"][i]) * a * b**i
+        room.mean_slice["temperature"] = 0
+        for i in range(len(room.slices["temperature"])):
+            room.mean_slice["temperature"] += (
+                np.mean(room.slices["temperature"][i]) * a * b**i
+            )
 
 
 # ------------ main ------------

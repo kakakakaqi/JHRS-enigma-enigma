@@ -24,18 +24,12 @@ add_door(hallway, (5, 0), entryway, (5, 10), "Hall-Entry")  # Bottom/top wall
 # Save the floor plan (scale=20 makes it slightly smaller than default)
 # save("scattered_floor_plan.png", scale=20)
 
+# save_fds("V4.fds")
+#
 analyze_stuff(fdsreader.Simulation("./V3"))
 
-somevarname = []
-for d in hallway.slices["soot"]:
-    m = np.mean(d) * 100000
-    somevarname.append(m)
-
-somevarname2 = []
-for d in hallway.slices["temperature"]:
-    m = np.mean(d)
-    somevarname2.append(m)
-
-sns.lineplot(somevarname, label="soot")
-sns.lineplot(somevarname2, label="temp")
-plt.show()
+for room in rooms:
+    room.analyze_what_was_analyzed(0.3)
+    print(f"name: {room.name}")
+    print(room.discomforts)
+    print()
