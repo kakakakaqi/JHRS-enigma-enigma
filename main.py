@@ -1,3 +1,7 @@
+import seaborn as sns
+import matplotlib.pyplot as plt
+import fdsreader
+import numpy as np
 from floor_plan import *
 
 hallway = Room(Rect(20, 0, 0, 10, 50, 4), "Hallway")
@@ -15,7 +19,23 @@ add_door(hallway, (0, 22.5), bedroom, (20, 7.5), "Hall-Bedroom")  # Left wall
 add_door(hallway, (10, 20), bathroom, (0, 5), "Hall-Bathroom")  # Right wall
 add_door(hallway, (5, 0), entryway, (5, 10), "Hall-Entry")  # Bottom/top wall
 
-format_rooms("scatter")
+# format_rooms("scatter")
 
 # Save the floor plan (scale=20 makes it slightly smaller than default)
-save("scattered_floor_plan.png", scale=20)
+# save("scattered_floor_plan.png", scale=20)
+
+analyze_stuff(fdsreader.Simulation("./V3"))
+
+somevarname = []
+for d in hallway.slices["soot"]:
+    m = np.mean(d) * 100000
+    somevarname.append(m)
+
+somevarname2 = []
+for d in hallway.slices["temperature"]:
+    m = np.mean(d)
+    somevarname2.append(m)
+
+sns.lineplot(somevarname, label="soot")
+sns.lineplot(somevarname2, label="temp")
+plt.show()

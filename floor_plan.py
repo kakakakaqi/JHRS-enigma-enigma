@@ -9,6 +9,7 @@ from typing import (
     TypeVar,
 )
 import drawsvg as draw
+import analysis_bridge
 
 # ------------ globals ------------
 
@@ -120,6 +121,7 @@ class Room:
     rect: Rect
     name: str = field(default_factory=new_id)
     doors: list[Door] = field(default_factory=list)
+    slices: dict[str, list[analysis_bridge.np.ndarray]] = field(default_factory=dict)
 
     def __post_init__(self):
         global rooms
@@ -533,7 +535,7 @@ def save_fds(fname: str):
         fds_content += f"&DEVC XYZ={cx:.3f},{cy:.3f},1.2, QUANTITY='TEMPERATURE', ID='TEMP_{i}' /\n"
 
     # mid-height for slices
-    mid_z = WALL_HEIGHT / 2.0
+    mid_z = WALL_HEIGHT * 3 / 4  # smoke is mainly high
 
     # Add slice files (mid-height PBZ slices for smoke and temperature)
     fds_content += f"""
@@ -563,6 +565,24 @@ def save_fds(fname: str):
             f.write(fds_content)
     except Exception as e:
         print(f"Error writing FDS file: {e}")
+
+
+def analyze_stuff(sim: analysis_bridge.fdsreader.Simulation):
+    global rooms
+    for room in rooms:
+        i = 0
+        soot = []
+        temperature = []
+        while True:
+            try:
+                f = analysis_bridge.get_room_fields(sim, room, i)
+                soot.append(f["soot"])
+                temperature.append(f["temperature"])
+                i += 1
+            except:
+                break
+        room.slices["soot"] = soot
+        room.slices["temperature"] = temperature
 
 
 # ------------ main ------------
